@@ -4,7 +4,7 @@
 # Email  : maojiayuan@gmail.com
 # Date   : 27/01/2018
 # 
-# This file is part of Synchronized-BatchNorm-PyTorch.
+# This file is part of Synchronized-BatchNorm-PyTorch. 同步锁
 # https://github.com/vacancy/Synchronized-BatchNorm-PyTorch
 # Distributed under MIT License.
 
@@ -25,7 +25,7 @@ class FutureResult(object):
 
     def put(self, result):
         with self._lock:
-            assert self._result is None, 'Previous result has\'t been fetched.'
+            assert self._result is None, 'Previous result has\'t been fetched.'  #之前结果已经被获取
             self._result = result
             self._cond.notify()
 

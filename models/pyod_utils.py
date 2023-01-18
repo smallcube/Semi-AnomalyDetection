@@ -22,7 +22,7 @@ from sklearn.utils import check_consistent_length
 
 from sklearn.utils import check_random_state
 from sklearn.utils.random import sample_without_replacement
-from sklearn.metrics   import roc_auc_score
+from sklearn.metrics import roc_auc_score
 import torch
 
 MAX_INT = np.iinfo(np.int32).max
@@ -338,15 +338,15 @@ def get_gmean(y, y_pred, threshold=0.5):
 
     return Gmean
 
-def AUC_and_Gmean(y_pred, y):
+def AUC_and_Gmean(y_true, y_pred):
     #print(y_test)
     #print(y_scores)
     if isinstance(y_pred, torch.Tensor):
         y_pred = y_pred.detach().clone().numpy()
-    if isinstance(y, torch.Tensor):
-        y = y.detach().clone().numpy()
-    auc = round(roc_auc_score(y_pred, y), ndigits=4)
+    if isinstance(y_true, torch.Tensor):
+        y_true = y_true.detach().clone().numpy()
+    auc = round(roc_auc_score(y_true,y_pred), ndigits=4)
     #prn = round(precision_n_scores(y_test, y_scores), ndigits=4)
-    gmean = round(get_gmean(y_pred, y, 0.5), ndigits=4)
+    gmean = round(get_gmean(y_true, y_pred, 0.5), ndigits=4)
 
     return auc, gmean

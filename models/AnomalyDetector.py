@@ -17,11 +17,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 from torch.nn import Parameter as P
 
-from .layers import ccbn, identity, SNLinear, SNEmbedding
-
-from .utils import prepare_z_y, active_sampling_V1, sample_selector_V1
-from .losses import loss_dis_fake, loss_dis_real
-from .pyod_utils import AUC_and_Gmean
+from models.layers import ccbn, identity, SNLinear, SNEmbedding
+from models.utils import prepare_z_y, active_sampling_V1, sample_selector_V1
+from models.losses import loss_dis_fake, loss_dis_real
+from models.pyod_utils import  AUC_and_Gmean
 
 
 #network of transformation
@@ -34,7 +33,7 @@ class Transformation(nn.Module):
         self.output_dim = output_dim  #dimension of output layer, default=input_dim
         self.hidden_layers = hidden_layers   #number of hidden layers
 
-        self.which_linear = nn.Linear
+        self.which_linear= nn.Linear
 
         self.input_fc = self.which_linear(self.input_dim, self.hidden_dim)
 
@@ -42,11 +41,11 @@ class Transformation(nn.Module):
 
         self.model = nn.Sequential(self.input_fc,
                                    nn.ReLU())
-
+        self.init = init
         for index in range(self.hidden_layers):
             middle_fc = nn.Linear(self.hidden_dim, self.hidden_dim)
             self.model.add_module('hidden-layers-{0}'.format(index), middle_fc)
-            self.model.add_module('ReLu-{0}'.format(index), nn.ReLU())
+            self.model.add_module('ReLu-{0}'.format(index), nn.ReLU()) #ReLU()是激活函数
             # self.model.add_module('ReLu-{0}'.format(index), nn.Tanh())
 
         self.model.add_module('output_layer', self.output_fc)
@@ -54,10 +53,10 @@ class Transformation(nn.Module):
         self.init_weights()
 
     def init_weights(self):
-        #used for init the parameters
+        #used for init the parameters 用于初始化参数
         self.param_count = 0
         for module in self.modules():
-            if (isinstance(module, nn.Linear)
+            if (isinstance(module, nn.Linear)  #instance用于判断是否是同一类型
                     or isinstance(module, nn.Embedding)):
                 if self.init == 'ortho':
                     init.orthogonal_(module.weight)
@@ -131,7 +130,7 @@ class AnomalyDector(nn.Module):
     def __init__(self, args, data_x, data_y, test_x, test_y):
         super(AnomalyDector, self).__init__()
 
-        lr = args.lr
+        lr = args.lr  #学习率
 
         self.device = torch.device("cuda" if args.cuda else "cpu")
         self.args = args
@@ -152,20 +151,20 @@ class AnomalyDector(nn.Module):
 
         # 1: encoder
         self.encoder = Encoder(input_dim=self.feature_size, hidden_dim=self.hidden_dim, output_dim=self.hidden_dim, 
-                                hidden_layers=args.hidden_layers_encoder, init=args.init)
-        
+                                hidden_layers=args.gen_layer, init=args.init)
+        #args.hidden_layers_encoder
         # 2: create ensemble of transformations
         self.trans_Ensemble = []
         parameters_trans = list()
         
         for index in range(args.ensemble_num):
-            trans = Transformation()
+            trans = Transformation(input_dim=self.feature_size, hidden_dim=(self.feature_size)*2, output_dim=self.hidden_dim)
             self.trans_Ensemble += [trans]
             parameters_trans += list(trans.parameters())
         
         # 3: optimizer
         self.optimizer = optim.Adam(parameters_trans+list(self.encoder.parameters()), lr=lr, betas=(0.00, 0.99))
-
+    #开始训练
     def fit(self):
         log_dir = os.path.join('./log/', self.args.data_name)
         if not os.path.exists(log_dir):
@@ -178,6 +177,7 @@ class AnomalyDector(nn.Module):
         self.train_history = defaultdict(list)
         for epoch in range(self.args.max_epochs):
             train_AUC, train_Gmean, test_auc, test_gmean = self.train_one_epoch(epoch)
+
             if train_Gmean * train_AUC > Best_Measure_Recorded:
                 Best_Measure_Recorded = train_Gmean * train_AUC
                 best_auc = test_auc
@@ -187,10 +187,11 @@ class AnomalyDector(nn.Module):
                     'encoder': self.encoder.state_dict(),
                     'auc': train_AUC
                 }
+
                 for i in range(self.args.ensemble_num):
                     netD = self.trans_Ensemble[i]
                     states['trans_dict' + str(i)] = netD.state_dict()
-                torch.save(states, os.path.join(log_dir, 'checkpoint_best.pth'))
+                torch.save(states, os.path.join(log_dir, 'checkpoint_best.pth')) #保存模型的参数
             # print(train_AUC, test_AUC, epoch)
             if self.args.print:
                 print('Training for epoch %d: Train_AUC=%.4f train_Gmean=%.4f Test_AUC=%.4f  Test_Gmean=%.4f' % (
@@ -199,7 +200,7 @@ class AnomalyDector(nn.Module):
         # step 1: load the best models
         self.Best_Ensemble = []
         states = torch.load(os.path.join(log_dir, 'checkpoint_best.pth'))
-        self.encoder.load_state_dict(states['encoder_dict'])
+        self.encoder.load_state_dict(states['encoder'])
         for i in range(self.args.ensemble_num):
             netD = self.trans_Ensemble[i]
             netD.load_state_dict(states['trans_dict' + str(i)])
@@ -229,12 +230,15 @@ class AnomalyDector(nn.Module):
     def train_one_epoch(self, epoch=1):
         
         data_size = self.data_x.shape[0]
+        #print("datasize:",data_size)
         # feature_size = data_x.shape[1]
         batch_size = min(self.args.batch_size, data_size)
+        #print("batch_size",batch_size)
 
         num_batches = data_size // batch_size
         num_batches = num_batches + 1 if data_size % batch_size > 0 else num_batches
 
+        #打乱数据
         perm_index = torch.randperm(data_size)
         self.data_x = self.data_x[perm_index]
         self.data_y = self.data_y[perm_index]
@@ -249,7 +253,7 @@ class AnomalyDector(nn.Module):
 
             end_pos = min(data_size, (index + 1) * batch_size)
             real_x = self.data_x[index * batch_size: end_pos]
-            
+
             #1: transformation and save the transformed x into x_transformed
             x_transformed = []
             latent_vectors = []
@@ -257,29 +261,38 @@ class AnomalyDector(nn.Module):
                 trans = self.trans_Ensemble[i]
                 x = trans(real_x)
                 x_transformed += [x]
-                latent_vectors += [self.encoder(x)]
+                #latent_vectors += [self.encoder(x)]
             
             #2: get the latent vector of real_x by directly feeding real_x to encoder
             x_encoded = self.encoder(real_x)
-
+            #print("x_encoded",x_encoded)
+            #print("x_transformed",x_transformed)
             #3: get the loss, and BP
             loss = self.get_loss(x_encoded, x_transformed)
-            self.optimizer.zero_grad()
-            loss.backward()
+            self.optimizer.zero_grad()  #将梯度置为0
+            loss.backward(torch.ones_like(loss))
             self.optimizer.step()
-
             anomaly_score += [loss.detach().clone()]
 
         anomaly_score = torch.cat(anomaly_score, 0)
         y_pred = torch.zeros_like(anomaly_score)
-        y_pred[anomaly_score>=self.args.threshold] = 1
+        #print("anomaly_score:", anomaly_score)
 
-        auc_train, gmean_train = AUC_and_Gmean(y_pred, self.real_y)
+        anomaly_score_min = torch.min(anomaly_score)
+        anomaly_score_max = torch.max(anomaly_score)
+        max_min = anomaly_score_max-anomaly_score_min
+        anomaly_score = (anomaly_score-anomaly_score_min).true_divide(max_min)
+
+        y_pred[anomaly_score>=self.args.threshold] = 1
+        #print("normal_anomaly_score:", anomaly_score)
+        #print("y_pred:",y_pred)
+        #print("data_y:",self.data_y)
+        auc_train, gmean_train = AUC_and_Gmean(self.data_y,y_pred)
         auc_test, gmean_test = self.evaluate()
         #todo: calculate the empirical performance
 
         return auc_train, gmean_train, auc_test, gmean_test
-    
+#测试集的评估结果
     def evaluate(self):
         data_size = self.test_x.shape[0]
         # feature_size = data_x.shape[1]
@@ -300,12 +313,12 @@ class AnomalyDector(nn.Module):
             
             #1: transformation and save the transformed x into x_transformed
             x_transformed = []
-            latent_vectors = []
+            #latent_vectors = []
             for i in range(self.args.ensemble_num):
                 trans = self.trans_Ensemble[i]
                 x = trans(real_x)
                 x_transformed += [x]
-                latent_vectors += [self.encoder(x)]
+                #latent_vectors += [self.encoder(x)]
             
             #2: get the latent vector of real_x by directly feeding real_x to encoder
             x_encoded = self.encoder(real_x)
@@ -316,12 +329,16 @@ class AnomalyDector(nn.Module):
         
         anomaly_score = torch.cat(anomaly_score, 0)
         y_pred = torch.zeros_like(anomaly_score)
+        #归一化
+        anomaly_score_min = torch.min(anomaly_score)
+        anomaly_score_max = torch.max(anomaly_score)
+        max_min = anomaly_score_max - anomaly_score_min
+        anomaly_score = (anomaly_score - anomaly_score_min).true_divide(max_min)
+
         y_pred[anomaly_score>=self.args.threshold] = 1
-        auc, gmean = AUC_and_Gmean(y_pred, self.test_y)
+        auc, gmean = AUC_and_Gmean(self.test_y,y_pred)
         return auc, gmean
 
-
-    
     def get_loss(self, x, x_transformed):
         loss = 0
         for i, xi in enumerate(x_transformed):
@@ -334,6 +351,7 @@ class AnomalyDector(nn.Module):
             
             loss_i = -torch.log(h_x_xi/(h_x_xi+h_denominator))
             loss += loss_i
+        print("loss为：",loss)
         return loss
 
 

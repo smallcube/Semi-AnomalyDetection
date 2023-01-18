@@ -6,29 +6,29 @@ import os
 import torch.nn.functional as F
 from numpy import *
 import argparse
-
+#加载数据
 def load_data_V2(data_name):
     #data_path = os.path.join('./data/', data_name)
     data_path = data_name
     data = pd.read_table('{path}'.format(path = data_path), sep=',', header=None)
-    data = data.sample(frac=1).reset_index(drop=True)
+    data = data.sample(frac=1).reset_index(drop=True) #删除原始的索引
     id = data.pop(0)
-    y = data.pop(1).astype('category')
-    data_x = data.values
+    y = data.pop(1).astype('category') #获取第一列的类别
+    data_x = data.values   #将pandas转化为numpy
     
     #data_y = y.cat.codes.values
     #print(data_x.size())
     data_y = np.zeros((data_x.shape[0],) ,dtype = np.int)
     idx = (y.values=='out')
-    data_y[idx] = 1
+    data_y[idx] = 1    #若为out,idx=True转化为1
     min_label = 1
     #min_label = 0 if zeros_counts<ones_counts else 1
     #class_mapping = {label:idx for idx,label in enumerate(set(y.values))}
     #data_y = y.map(class_mapping).values
 
-    n_classes = int(max(data_y)+1)
+    n_classes = int(max(data_y)+1)  #最多两类
     return data_x, data_y, min_label, n_classes
-
+#加载数据
 def load_data(data_name):
     data_path = os.path.join('./data/', data_name)
     data = pd.read_table('{path}'.format(path = data_path), sep=',', header=None)
@@ -46,8 +46,8 @@ def load_data(data_name):
     return data_x, data_y, min_label, n_classes
 
 class Distribution(torch.Tensor):
-    # Init the params of the distribution
-    def init_distribution(self, dist_type, **kwargs):    
+    # Init the params of the distribution  初始化分布的参数
+    def init_distribution(self, dist_type, **kwargs):    #**kwargs是字典类型吗
         self.dist_type = dist_type
         self.dist_kwargs = kwargs
         if self.dist_type == 'normal':
@@ -62,19 +62,19 @@ class Distribution(torch.Tensor):
             self.random_(0, self.num_categories)    
         # return self.variable
     
-    # Silly hack: overwrite the to() method to wrap the new object
+    # Silly hack: overwrite the to() method to wrap the new object 包装新的对象
     # in a distribution as well
     def to(self, *args, **kwargs):
         new_obj = Distribution(self)
         new_obj.init_distribution(self.dist_type, **self.dist_kwargs)
-        new_obj.data = super().to(*args, **kwargs)    
+        new_obj.data = super().to(*args, **kwargs)     #super()子类继承父类，进行重写
         return new_obj
-
+# 返回z_和 y_,z服从正太分布，y_服从分类分布
 def prepare_z_y(G_batch_size, dim_z, nclasses, device='cuda', 
                 fp16=False,z_var=1.0):
     z_ = Distribution(torch.randn(G_batch_size, dim_z, requires_grad=False))
-    z_.init_distribution('normal', mean=0, var=z_var)
-    z_ = z_.to(device,torch.float16 if fp16 else torch.float32)   
+    z_.init_distribution('normal', mean=0, var=z_var)   #数据服从正太分布，均值为0，方差为1
+    z_ = z_.to(device,torch.float16 if fp16 else torch.float32)    #torch.float32
   
     if fp16:
         z_ = z_.half()
@@ -133,7 +133,7 @@ def sample_selector(args, z, y, real_x, real_y, min_label, netG, NetD_Ensemble, 
 '''
 
 def sample_selector(args, z, y, real_x, real_y, min_label, netG, NetD_Ensemble, low_margin=0.4, high_margin=0.8):
-    idx = (real_y==min_label)
+    idx = (real_y==min_label) #min_label是0或者1
     extra_batch_size = real_y.shape[0]-int(idx.sum())*2
     X = real_x.detach()
     Y = real_y.detach()
@@ -541,25 +541,29 @@ def parse_args():
     parser.add_argument('--lr_d', type=float, default=0.01,
                         help='Learning rate of discriminator.')
     parser.add_argument('--active_rate', type=float, default=0.05,
-                        help='the proportion of instances that need to be labeled.')
+                        help='the proportion of instances that need to be labeled.') #需要被标记的实例比例
     parser.add_argument('--batch_size', type=int, default=256,
                         help='batch size.')
     parser.add_argument('--dim_z', type=int, default=128,
                         help='dim for latent noise.')
     parser.add_argument('--dis_layer', type=int, default=1,
-                        help='hidden_layer number in dis.')
+                        help='hidden_layer number in dis.') #鉴别器的隐藏层数
     parser.add_argument('--gen_layer', type=int, default=2,
-                        help='hidden_layer number in gen.')
+                        help='hidden_layer number in gen.') #生成器的隐藏层数
     parser.add_argument('--ensemble_num', type=int, default=10,
                         help='the number of dis in ensemble.')
     parser.add_argument('--cuda', type=bool, default=False,
                         help='if GPU used')
     parser.add_argument('--SN_used', type=bool, default=True,
-                        help='if spectral Normalization used')
-    parser.add_argument('--init_type', nargs='?', default="ortho",
+                        help='if spectral Normalization used') #如果使用了光谱归一化
+    parser.add_argument('--init', nargs='?', default="ortho",
                         help='init method for both gen and dis, including ortho,N02,xavier')
     parser.add_argument('--print', type=bool, default=True,
                         help='Print the learning procedure')
+    parser.add_argument('--lr', type=float, default=0.001,
+                        help='Learning rate')
+    parser.add_argument('--threshold', type=float, default=0.55,
+                        help='threshold of anomaly')
     return parser.parse_args()
 
 def data_norm(dataset):

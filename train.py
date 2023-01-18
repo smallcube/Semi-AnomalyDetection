@@ -32,7 +32,7 @@ if __name__=='__main__':
     save_dir = './results'
 
 
-    data_names = [#'arrhythmia.mat',
+    data_names = ['arrhythmia.mat',
                   #  'cardio.mat',
                   #  'glass.mat',
                   #  'ionosphere.mat',
@@ -50,8 +50,8 @@ if __name__=='__main__':
                   #  'annthyroid.mat',
                   #  'campaign.mat',
                   #  'celeba.mat',
-                    'fraud.mat',
-                    'donors.mat'
+                  #'fraud.mat',
+                  #'donors.mat'
                     ]
     # define the number of iterations
     n_ite = 10
@@ -113,17 +113,18 @@ if __name__=='__main__':
 
             X_train_pandas = pd.DataFrame(X_train_norm)
             X_test_pandas = pd.DataFrame(X_test_norm)
-            X_train_pandas.fillna(X_train_pandas.mean(), inplace=True)
-            X_test_pandas.fillna(X_train_pandas.mean(), inplace=True)
+            X_train_pandas.fillna(X_train_pandas.mean(), inplace=True)  #填充训练集空值
+            X_test_pandas.fillna(X_train_pandas.mean(), inplace=True)   #填充测试集空值
             X_train_norm = X_train_pandas.values
             X_test_norm = X_test_pandas.values
             
             #X_train_norm, X_test_norm = X_train, X_test
             data_x = torch.from_numpy(X_train_norm).float()
             data_y = torch.from_numpy(y_train).long()
+            #print(data_y)
             test_x = torch.from_numpy(X_test_norm).float()
             test_y = torch.from_numpy(y_test).long()
-            #print(data_x)
+            #print(test_y)
 
             t0 = time()
             #todo: add my method
@@ -140,7 +141,7 @@ if __name__=='__main__':
             gmean_mat[i, 0] = best_gmean
 
         roc_list = roc_list + np.mean(roc_mat, axis=0).tolist() + np.std(roc_mat, axis=0).tolist() + np.mean(gmean_mat, axis=0).tolist() + np.std(gmean_mat, axis=0).tolist()
-        temp_df = pd.DataFrame(roc_list).transpose()
+        temp_df = pd.DataFrame(roc_list).transpose() #转置
         temp_df.columns = df_columns
         roc_df = pd.concat([roc_df, temp_df], axis=0)
 
